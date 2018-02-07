@@ -42,97 +42,112 @@ var connection = mysql.createConnection({
 
 // connect to the mysql server and sql database
 
-connection.connect(function(err) {
-  if (err) throw err;
-  console.log("connected as id " + connection.threadId + "\n");
-  queryAllItem()
+connection.connect(function (err) {
+    if (err) throw err;
+    console.log("connected as id " + connection.threadId + "\n");
+    queryAllItem()
 });
 
 
 //  Running this application will first display all of the items available for sale. Include the ids, names, and prices of products for sale.
 
 function queryAllItem() {
-connection.query("SELECT * FROM products", function (err, res) {
-if (err) throw err;
-for (var i = 0; i < res.length; i++) {
-    console.log(res[i].item_id + " | " + res[i].product_name + " | " + res[i].price + " dollars" + "\n");
-}
-console.log("-----------------------------------");
-itemBuy();
-});
+    connection.query("SELECT * FROM products", function (err, res) {
+        if (err) throw err;
+        for (var i = 0; i < res.length; i++) {
+            console.log(res[i].item_id + " | " + res[i].product_name + " | "  +" Price:  " + res[i].price + " dollars" + "\n");
+        }
+        console.log("-----------------------------------");
+        promptUserPurchase();
+    });
 }
 
 // prompt question for which item customers want to buy
-function itemBuy(){
-  inquirer
-    .prompt({
-        name: "itemAsk",
-        type: "input",
-        message: "What do you want to buy? Please type item id."
-    })
-    .then(function(answer) {
-    
-     var query = "SELECT * FROM products WHERE ?";
-     var itemAsk = answer.itemAsk;
-      connection.query(query, {item_id: itemAsk}, function(err, res) {
-     if (err) throw err;
-     for (var i = 0; i < res.length; i++) {
-  console.log(res[i].item_id + " | " + res[i].product_name + " | " + res[i].price + " dollars" + " | " + " Available stock: " + res[i].stock_quantity  + "\n");
-   }
+function promptUserPurchase() {
+    // console.log('___ENTER promptUserPurchase___');
 
-  checkStock(); 
-  return itemAsk;
-  });
-    });
-      
+    // Prompt the user to select an item
+    inquirer.prompt([
+        {
+            type: 'input',
+            name: 'item_id',
+            message: 'Please enter the item ID which you would like to purchase.',
+            validate: validateInput,
+
+
+		},
+        {
+            type: 'input',
+            name: 'quantity',
+            message: 'How many do you need?',
+            validate: validateInput,
+		}
+	]).then(function (input) {
+        console.log('Review Order: \n    item_id = ' + input.item_id + '\n    quantity = ' + input.quantity);
+
+        var item = input.item_id;
+        var quantity = input.quantity;
+
+        // Query db to confirm that the given item ID exists in the desired quantity
+        var queryStr = 'SELECT * FROM products WHERE ?';
+
+        connection.query(queryStr, {
+            item_id: item
+        }, function (err, data) {
+            if (err) throw err;
+
+            // If the user has selected an invalid item ID, data attay will be empty
+            // console.log('data = ' + JSON.stringify(data));
+
+            if (data.length === 0) {
+                console.log('ERROR: Invalid Item ID. Please select a valid Item ID.');
+                queryAllItem()
+
+            } else {
+                var productData = data[0];
+
+                //				 console.log('productData = ' + JSON.stringify(productData));
+                //				 console.log('productData.stock_quantity = ' + productData.stock_quantity);
+
+                // If the quantity requested by the user is in stock
+                if (quantity <= productData.stock_quantity) {
+                    console.log('Congratulations, the product you requested is in stock! Placing order!');
+
+                    // Construct the updating query string
+                    var updateQueryStr = 'UPDATE products SET stock_quantity = ' + (productData.stock_quantity - quantity) + ' WHERE item_id = ' + item;
+                    // console.log('updateQueryStr = ' + updateQueryStr);
+
+                    // Update the inventory
+                    connection.query(updateQueryStr, function (err, data) {
+                        if (err) throw err;
+
+                        console.log('Your oder has been placed! Your total is $' + productData.price * quantity);
+                        console.log('Thank you for shopping with us!');
+                        console.log("\n---------------------------------------------------------------------\n");
+
+                        // End the database connection
+                        connection.end();
+                    })
+                } else {
+                    console.log('Sorry, there is not enough product in stock, your order can not be placed as is.');
+                    console.log('Please modify your order.');
+                    console.log("\n---------------------------------------------------------------------\n");
+
+                    queryAllItem()
+
+                }
+            }
+        })
+    })
 }
 
-// prompt question of how many units customers want to buy
-                  
-function checkStock() {
-  inquirer
-    .prompt({
-      name: "unitAsk",
-      type: "input",
-      message: "How many do you want?"
-    })
-    .then(function(answer) {
-    var query = "SELECT * FROM products WHERE ?";
+function validateInput(value) {
+	var integer = Number.isInteger(parseFloat(value));
+	var sign = Math.sign(value);
 
-      connection.query(query, {item_id: itemAsk, stock_quantity : stock_quantity, }, function(err, res) {
-     if (err) throw err;
-     if (answer.i)
-     for (var i = 0; i < res.length; i++) {
-      console.log(res[i].item_id + " | " + res[i].product_name + " | " + res[i].price + " dollars" + " | " + " Available stock: " + res[i].stock_quantity  + "\n");
-       }
-   
-      });
-    
-      });
-    }
-
-
-
-
-//
-//function updateProduct() {
-//    console.log("Updating songs \n");
-//    var query = connection.query(
-//        "UPDATE songs SET ? WHERE ?", [
-//            {
-//                artist: "Emmy"
-//      },
-//            {
-//                genre: "Country"
-//      }
-//    ],
-//        function (err, res) {
-//            console.log(res.affectedRows + " Emmy's song updated!\n");
-//            // Call deleteProduct AFTER the UPDATE completes
-//            deleteProduct();
-//        }
-//    );
-//
-//    // logs the actual query being run
-//    console.log(query.sql);
-//}
+	if (integer && (sign === 1)) {
+		return true;
+	} else {
+		return 'Please enter a whole non-zero number.';
+	}
+}
